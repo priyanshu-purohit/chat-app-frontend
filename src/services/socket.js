@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
 
 class SocketService {
     socket = null;
@@ -45,16 +45,16 @@ class SocketService {
     }
 
     on(event, callback) {
-     if (!this.socket) {
-      console.warn('Socket not initialized. Event listener not attached.');
-      return;
-    }
+        if (!this.socket) {
+            console.warn('Socket not initialized. Event listener not attached.');
+            return;
+        }
 
-    this.socket.on(event, callback);
+        this.socket.on(event, callback);
     }
 
     off(event, callback) {
-        if(this.socket) {
+        if (this.socket) {
             this.socket.off(event, callback);
         }
     }
