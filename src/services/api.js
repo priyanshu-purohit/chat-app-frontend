@@ -36,7 +36,7 @@ api.interceptors.response.use(
                 const rateLimitMessage = response.data?.message || 'Too may requests. Please try again later.';
 
                 window.dispatchEvent(
-                    newCustomEvent('api-rate-limited', {
+                    new CustomEvent('api-rate-limited', {
                         detail: { message: rateLimitMessage }
                     })
                 );

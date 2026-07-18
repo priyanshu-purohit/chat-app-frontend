@@ -22,8 +22,7 @@ export function AuthProvider({ children }) {
         socketService.connect(token);
 
         const response = await api.get('/auth/me');
-        console.log(response);
-        setUser(response.data.username);
+        setUser(response.data);
       }
       catch (error) {
         console.error('Session restoration failed:', error);
@@ -54,10 +53,10 @@ export function AuthProvider({ children }) {
     try {
       const response = await api.post('/auth/login', { email, password });
 
-      const { token, username: userData } = response.data;
+      const { token } = response.data;
 
       localStorage.setItem('token', token);
-      setUser(userData);
+      setUser(response.data);
 
       // Hook up real-time websocket
       socketService.connect(token);
