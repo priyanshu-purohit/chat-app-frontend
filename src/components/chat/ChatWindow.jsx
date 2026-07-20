@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
+import { Send } from "lucide-react";
 
 
 export default function ChatWindow() {
 
     const { user } = useAuth();
-    const { activeChat, messages, loadingMessages, fetchMessages } = useChat();
+    const { activeChat, messages, loadingMessages, fetchMessages, sendMessage } = useChat();
+
+    const [text, setText] = useState("");
 
     useEffect(() => {
         if (activeChat?.id) {
@@ -49,6 +52,7 @@ export default function ChatWindow() {
                     <p className="text-center text-sm text-slate-600 mt-8">No messages yet. Say hello!</p>
                 ) : (
                     messages?.map((message) => {
+
                         const isMe = message.sender === user?._id;
 
                         const options = {
@@ -74,15 +78,37 @@ export default function ChatWindow() {
                 )}
             </div>
 
-            {/* Input Area (placeholder for now) */}
+            {/* Input Area */}
             <div className="px-4 py-3 border-t border-slate-800 bg-slate-900">
-                <div className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3">
-                    <input
-                        type="text"
-                        placeholder="Type a message..."
-                        className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none"
-                    />
+                <div className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 w-full">
+                    <form
+                        onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!text.trim()) return;
+
+                            await sendMessage(text);
+                            setText("");
+                        }}
+                        className="w-full flex items-center gap-3"
+                    >
+                        <input
+                            type="text"
+                            placeholder="Type a message..."
+                            className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none"
+                            value={text}
+                            onChange={(e) => setText(e.target.value)}
+                        />
+
+                        <button
+                            type="submit"
+                            className="size-10 rounded-full flex items-center justify-center text-white border-slate-700 shrink-0 font-semibold cursor-pointer bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            <Send size={20} />
+                        </button>
+
+                    </form>
                 </div>
+
             </div>
         </div>
     );

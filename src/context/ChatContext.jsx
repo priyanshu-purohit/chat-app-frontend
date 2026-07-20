@@ -41,6 +41,39 @@ export function ChatProvider({ children }) {
     }
   };
 
+  const sendMessage = async (content) => {
+    if (!activeChat) return;
+
+    try {
+      // Post the message to the backend
+      const chatId = activeChat.id;
+      console.log("chatId", chatId);
+
+      const response = await api.post(`/messages/send/${chatId}`, { content });
+
+      const newMessage = response.data.data;
+
+      // 1. Append the new message to the active messages list
+      setMessages((prev) => [...(prev || []), newMessage]);
+
+      // 2. Update the conversations sidebar item to show the new lastMessage
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          if(conv._id === chatId || conv.id === chatId) {
+            return {
+              ...conv,
+              lastMessage: newMessage,
+            };
+          }
+          return conv;
+        });
+      });
+    }
+    catch (error) {
+      console.error("Failed to send message", error);
+    }
+  }
+
   const value = {
     conversations,
     activeChat,
@@ -51,7 +84,8 @@ export function ChatProvider({ children }) {
     setMessages,
     messages,
     loadingMessages,
-    fetchMessages
+    fetchMessages,
+    sendMessage
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
