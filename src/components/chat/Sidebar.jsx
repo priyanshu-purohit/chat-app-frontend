@@ -53,7 +53,7 @@ export default function Sidebar() {
                     <div className="flex justify-center items-center h-24">
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
                     </div>
-                ) : conversations.length === 0 ? (
+                ) : conversations?.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
                         <MessageSquare className="size-9 mb-2 opacity-50" />
                         <p className="text-sm opacity-50">No conversation yet</p>
