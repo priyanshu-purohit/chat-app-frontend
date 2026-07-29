@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
-import { Send } from "lucide-react";
+import { Check, CheckCheck, Send } from "lucide-react";
 
 
 export default function ChatWindow() {
 
     const { user } = useAuth();
-    const { activeChat, messages, loadingMessages, fetchMessages, sendMessage } = useChat();
+    const { activeChat, messages, loadingMessages, fetchMessages, sendMessage, markAsRead, typingUsers, handleTyping } = useChat();
 
     const [text, setText] = useState("");
 
+    const partnerId = activeChat?.participant?._id;
+
+    const isPartnerTyping = partnerId && typingUsers.includes(partnerId);
+
     useEffect(() => {
         if (activeChat?.id) {
+            console.log(messages);
             fetchMessages(activeChat?.id);
         }
+        markAsRead();
     }, [activeChat]);
 
     const chatName = activeChat?.type === 'direct'
@@ -72,11 +78,28 @@ export default function ChatWindow() {
                                 {message.content}
                                 <span className="text-xs opacity-70 ml-2 mt-1 float-right">{time}</span>
 
+                                {isMe && message.status === 'Sent' ?
+                                    (<Check className="text-slate-200 size-4" />) :
+                                    (isMe && message.status === 'Delivered' ?
+                                        (<CheckCheck className="text-slate-200 size-4" />) :
+                                        (isMe && message.status === 'Read' ?
+                                            (<CheckCheck className="text-blue-300 size-4" />) : null))
+                                }
                             </div>
                         )
                     })
                 )}
             </div>
+
+            {/* typing indicator */}
+            {isPartnerTyping && (
+                <div className="px-5 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+                    <div className="size-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-xs text-gray-400">
+                        {chatName} is typing...
+                    </span>
+                </div>
+            )}
 
             {/* Input Area */}
             <div className="px-4 py-3 border-t border-slate-800 bg-slate-900">
@@ -97,6 +120,7 @@ export default function ChatWindow() {
                             className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none"
                             value={text}
                             onChange={(e) => setText(e.target.value)}
+                            onKeyDown={() => handleTyping()}
                         />
 
                         <button

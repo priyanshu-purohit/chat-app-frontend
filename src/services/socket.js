@@ -6,6 +6,7 @@ class SocketService {
     socket = null;
 
     connect(token) {
+        console.log("inside socket js")
         if (this.socket?.connected) return;
 
         this.socket = io(SOCKET_URL, {

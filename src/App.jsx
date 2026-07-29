@@ -4,16 +4,17 @@ import { AuthProvider } from './context/AuthContext';
 import { PrivateRoute, PublicRoute } from './components/layout/RouteGuards';
 import AppLayout from './components/layout/AppLayout';
 import { ChatProvider } from './context/ChatContext';
+import { SocketProvider } from './context/SocketContext';
 
 
 
 export default function App() {
   return (
     <AuthProvider>
-      <ChatProvider>
-        {/* add socketProvider here */}
-        <BrowserRouter>
-          <Routes>
+      <SocketProvider>
+        <ChatProvider>
+          <BrowserRouter>
+            <Routes>
 
             {/* Public Guest Routes */}
             <Route element={<PublicRoute />}>
@@ -32,6 +33,7 @@ export default function App() {
           </Routes>
         </BrowserRouter>
       </ChatProvider>
+      </SocketProvider>
     </AuthProvider>
   )
 }
