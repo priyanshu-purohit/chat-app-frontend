@@ -16,7 +16,6 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
 
   const { socket, isConnected } = useSocket();
@@ -50,6 +49,7 @@ export function ChatProvider({ children }) {
 
       setConversations((prev) => {
         return prev.map((conv) => {
+          console.log("conv", conv);
           const isMatch = conv.type === 'direct'
             ? (incomingMsg.sender === conv.participant._id || incomingMsg.receiver === conv.participant._id)
             : (incomingMsg.group === conv.group._id)
@@ -69,7 +69,7 @@ export function ChatProvider({ children }) {
 
     const handleMessageRead = ({ readerId }) => {
       const currentActive = activeChatRef.current;
-      console.log(activeChatRef.current);
+
       const activeId = currentActive?.id;
 
       if (activeId === readerId) {
@@ -86,14 +86,110 @@ export function ChatProvider({ children }) {
     };
 
     const handleTypingStarted = ({ senderId }) => {
-      setTypingUsers((prev) => {
-        if (prev.includes(senderId)) return prev;
-        return [...prev, senderId];
-      });
+      const currentActive = activeChatRef.current;
+
+      const isForActiveChat = currentActive && (
+        (currentActive.type === 'direct' &&
+          (senderId === currentActive.participant._id)) ||
+        (currentActive.type === 'group' &&
+          senderId === currentActive.group._id)
+      );
+
+      if (isForActiveChat) {
+        setTypingUsers((prev) => {
+          if (prev.includes(senderId)) return prev;
+          return [...prev, senderId];
+        });
+      }
     };
 
     const handleTypingStop = ({ senderId }) => {
-      setTypingUsers((prev) => prev.filter((id) => id !== senderId));
+      const currentActive = activeChatRef.current;
+
+      const isForActiveChat = currentActive && (
+        (currentActive.type === 'direct' &&
+          (senderId === currentActive.participant._id)) ||
+        (currentActive.type === 'group' &&
+          senderId === currentActive.group._id)
+      );
+
+      if (isForActiveChat) {
+        console.log(isForActiveChat);
+        setTypingUsers((prev) => prev.filter((id) => id !== senderId));
+      }
+    };
+
+    const handleMessageEdited = (message) => {
+      const currentActive = activeChatRef.current;
+
+      const isForActiveChat = currentActive && (
+        (currentActive.type === 'direct' &&
+          (message.sender === currentActive.participant._id || message.receiver === currentActive.participant._id)) ||
+        (currentActive.type === 'group' &&
+          message.group === currentActive.group._id)
+      );
+
+      // Update active chat feed
+      if (isForActiveChat) {
+        setMessages((prev) =>
+          prev?.map((msg) => (msg._id === message._id ? message : msg))
+        );
+      }
+
+      // Update last message in sidebar
+      setConversations((prev) => {
+        return prev?.map((conv) => {
+          const isMatch = (conv.type === 'direct' && (message.sender === conv.participant._id || message.receiver === conv.participant._id))
+            || (conv.type === 'group' && message.group === conv.group._id);
+
+          if (isMatch) {
+            return {
+              ...conv,
+              lastMessage: message,
+            };
+          }
+          return conv;
+        });
+      });
+    };
+
+    const handleMessageDeleted = ({ messageId }) => {
+      // Remove from active chat feed
+      setMessages((prev) => prev?.filter((msg) => msg._id !== messageId));
+
+      // Update last message preview in sidebar
+      setConversations((prev) => {
+        return prev?.map((conv) => {
+          if (conv.lastMessage?._id === messageId) {
+            return {
+              ...conv,
+              lastMessage: null, // Clear preview since it was deleted
+            };
+          }
+          return conv;
+        });
+      });
+    };
+
+    const handleMessageReaction = ({ messageId, reactions }) => {
+      // Update reaction list in active chat feed
+      console.log("inside handle message", messageId, reactions);
+      setMessages((prev) =>
+        prev?.map((msg) => (msg._id === messageId ? { ...msg, reactions } : msg))
+      );
+
+      // Update reaction list for preview in sidebar
+      setConversations((prev) => {
+        return prev?.map((conv) => {
+          if (conv.lastMessage?._id === messageId) {
+            return {
+              ...conv,
+              lastMessage: { ...conv.lastMessage, reactions },
+            };
+          }
+          return conv;
+        });
+      });
     };
 
 
@@ -101,15 +197,22 @@ export function ChatProvider({ children }) {
     socket.on('message_read', handleMessageRead);
     socket.on('typing_started', handleTypingStarted);
     socket.on('typing_stop', handleTypingStop);
+    socket.on('message_edited', handleMessageEdited);
+    socket.on('message_deleted', handleMessageDeleted);
+    socket.on('message_deleted', handleMessageDeleted);
+    socket.on('message_reaction', handleMessageReaction);
 
     return () => {
       socket.off('new_message', handleNewMessage);
       socket.off('message_read', handleMessageRead);
       socket.off('typing_started', handleTypingStarted);
       socket.off('typing_stop', handleTypingStop);
+      socket.off('message_edited', handleMessageEdited);
+      socket.off('message_deleted', handleMessageDeleted);
+      socket.off('message_reaction', handleMessageReaction);
     }
 
-  }, [isConnected, socket]);
+  }, [isConnected, socket, user]);
 
   const fetchConversations = async () => {
     setLoadingConversations(true);
@@ -218,6 +321,7 @@ export function ChatProvider({ children }) {
 
     if (!isCurrentUserTypingRef.current) {
       isCurrentUserTypingRef.current = true;
+      console.log("typing started");
       socket.emit("typing_started", { receiverId });
     }
 
@@ -228,6 +332,81 @@ export function ChatProvider({ children }) {
       socketService.emit("typing_stop", { receiverId });
       isCurrentUserTypingRef.current = false;
     }, 2000);
+  };
+
+  const editMessage = async (messageId, newContent) => {
+    try {
+      const response = await api.patch(`/messages/${messageId}`, { content: newContent });
+      const updatedMsg = response.data; // Backend returns the updated message object
+
+      // 1. Update message inside the active messages feed
+      setMessages((prev) =>
+        prev?.map((msg) => (msg._id === messageId ? updatedMsg : msg))
+      );
+
+      // 2. Update sidebar preview if this was the last message
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          if (conv.lastMessage?._id === messageId) {
+            return { ...conv, lastMessage: updatedMsg };
+          }
+          return conv;
+        });
+      });
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+    }
+  };
+
+  const deleteMessage = async (messageId) => {
+    try {
+      await api.delete(`/messages/${messageId}`);
+
+      // 1. Remove message from active feed
+      setMessages((prev) => prev?.filter((msg) => msg._id !== messageId));
+
+      // 2. Remove last message preview from sidebar if needed
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          console.log("messageId", messageId);
+          console.log("lastMessage", conv.lastMessage._id);
+          if (conv.lastMessage?._id === messageId) {
+            console.log("Conversation", conv);
+            return { ...conv, lastMessage: null };
+          }
+          return conv;
+        })
+      });
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+  };
+
+  const reactToMessage = async (messageId, emoji) => {
+    try {
+      const response = await api.post(`/messages/${messageId}/react`, { emoji });
+      const reactions = response.data.reactions;
+
+      // 1. Update reaction list locally in the message feed
+      setMessages((prev) =>
+        prev?.map((msg) => (msg._id === messageId ? { ...msg, reactions } : msg))
+      );
+
+      // 2. Sync reactions with sidebar preview if this was the last message
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          if (conv.lastMessage?._id === messageId) {
+            return {
+              ...conv,
+              lastMessage: { ...conv.lastMessage, reactions },
+            };
+          }
+          return conv;
+        });
+      });
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
+    }
   };
 
 
@@ -245,7 +424,10 @@ export function ChatProvider({ children }) {
     sendMessage,
     markAsRead,
     typingUsers,
-    handleTyping
+    handleTyping,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

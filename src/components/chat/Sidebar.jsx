@@ -2,12 +2,15 @@ import { Search, MessageSquare } from "lucide-react";
 import { useChat } from "../../context/ChatContext";
 import { useAuth } from "../../context/AuthContext";
 import { useEffect } from "react";
+import { useSocket } from "../../context/SocketContext";
 
 export default function Sidebar() {
 
     const { user, logout } = useAuth();
 
     const { conversations, activeChat, setActiveChat, loadingConversations, fetchConversations, setConversations, setMessages } = useChat();
+
+    const { onlineUsers } = useSocket();
 
     useEffect(() => {
         fetchConversations();
@@ -73,7 +76,7 @@ export default function Sidebar() {
                                 <div className="relative h-10 w-10 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300 uppercase shrink-0">
                                     <img src={conv.participant.avatar || "https://img.magnific.com/premium-vector/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-vector-illustration_561158-3396.jpg?semt=ais_hybrid&w=740&q=80"} alt="" className="rounded-full" />
 
-                                    {conv.participant.status === 'Online' ?
+                                    {onlineUsers[activeChat?.participant?._id]?.status === 'Online' ?
                                         <div className="border border-slate-900 size-2.5 rounded-full absolute right-0 bottom-0 bg-green-400"></div> : ""}
                                 </div>
 
@@ -83,8 +86,11 @@ export default function Sidebar() {
                                         <span className="text-sm font-semibold text-slate-200 truncate">{conv.participant.username}</span>
                                     </div>
                                     <p className="text-xs text-slate-400 truncate mt-0.5">
-                                        {conv.lastMessage?.content || 'No messages yet'}
-                                    </p>
+                                        {/* need to be checked later */}
+                                        {conv.lastMessage?.length === 0 && 'No messages yet'}
+                                        {conv.lastMessage === null && 'Message deleted'}
+                                        {conv.lastMessage?.content}
+                                    </p> 
                                 </div>
 
                                 {/* unread messages */}

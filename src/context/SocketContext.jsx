@@ -9,6 +9,7 @@ export function SocketProvider({ children }) {
 
   const [isConnected, setIsConnected] = useState(false);
 
+
   // Maps userId -> 'Online' | 'Offline' | 'Away'
   const [onlineUsers, setOnlineUsers] = useState({});
 
@@ -63,12 +64,12 @@ export function SocketProvider({ children }) {
 
 
   // // Expose manual presence updater matching backend 'presence_update' expectation
-  // const updatePresenceStatus = (status) => {
-  //   // Valid statuses: 'Online' | 'Offline' | 'Away'
-  //   if (socketService.socket?.connected) {
-  //     socketService.emit('presence_update', { status });
-  //   }
-  // };
+  const updatePresenceStatus = (status) => {
+    // Valid statuses: 'Online' | 'Offline' | 'Away'
+    if (socketService.socket?.connected) {
+      socketService.emit('presence_update', { status });
+    }
+  };
 
   // const joinGroupRoom = (groupId) => {
   //   if (socketService.socket?.connected) {
