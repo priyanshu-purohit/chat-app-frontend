@@ -16,13 +16,33 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState([]);
 
   const { socket, isConnected } = useSocket();
 
   const isCurrentUserTypingRef = useRef(false);
   const timeoutTimerRef = useRef(null);
+
+
+
+  const isForActiveChat = (message) => {
+    const currentActive = activeChatRef.current;
+
+    if (!currentActive) return false;
+
+    return (currentActive.type === 'direct' && ((message?.sender === currentActive.participant._id) || (message?.receiver === currentActive.participant._id))) ||
+      (currentActive.type === 'group' && (message?.group === currentActive.group._id));
+  };
+  const isForConversation = (conversation, message) => {
+    if (conversation.type === "direct") {
+      return (
+        message.sender === conversation.participant._id ||
+        message.receiver === conversation.participant._id
+      );
+    }
+
+    return message.group === conversation.group._id;
+  };
 
   // Use a ref to store activeChat so the WebSocket listener always reads the fresh value
   const activeChatRef = useRef(activeChat);
@@ -33,43 +53,30 @@ export function ChatProvider({ children }) {
   useEffect(() => {
 
     const handleNewMessage = (incomingMsg) => {
+      const active = isForActiveChat(incomingMsg);
 
-      const currentActive = activeChatRef.current;
-
-      // Determine if the incoming message belongs to our currently open chat
-      const isForActiveChat = currentActive && (
-        (currentActive.type === 'direct' &&
-          (incomingMsg.sender === currentActive.participant._id || incomingMsg.receiver === currentActive.participant._id)) ||
-        (currentActive.type === 'group' &&
-          incomingMsg.group === currentActive.group._id)
-      );
-
-      if (isForActiveChat) {
+      if (active) {
         setMessages((prev) => [...(prev || []), incomingMsg]);
       }
 
-      setConversations((prev) => {
-        return prev.map((conv) => {
-          const isMatch = conv.type === 'direct'
-            ? (incomingMsg.sender === conv.participant._id || incomingMsg.receiver === conv.participant._id)
-            : (incomingMsg.group === conv.group._id)
+      setConversations(prev =>
+        prev.map(conv => {
+          if (!isForConversation(conv, incomingMsg))
+            return conv;
 
-
-          if (isMatch) {
-            return {
-              ...conv,
-              lastMessage: incomingMsg,
-              unreadCount: isForActiveChat ? conv.unreadCount : (conv.unreadCount || 0) + 1,
-            };
-          }
-          return conv;
+          return {
+            ...conv,
+            lastMessage: incomingMsg,
+            unreadCount: active
+              ? conv.unreadCount
+              : (conv.unreadCount || 0) + 1,
+          };
         })
-      })
+      );
     };
 
     const handleMessageRead = ({ readerId }) => {
       const currentActive = activeChatRef.current;
-      console.log(activeChatRef.current);
       const activeId = currentActive?.id;
 
       if (activeId === readerId) {
@@ -86,14 +93,110 @@ export function ChatProvider({ children }) {
     };
 
     const handleTypingStarted = ({ senderId }) => {
-      setTypingUsers((prev) => {
-        if (prev.includes(senderId)) return prev;
-        return [...prev, senderId];
-      });
+      const message = {
+        sender: senderId,
+      }
+
+      if (isForActiveChat(message)) {
+        setTypingUsers((prev) => {
+          if (prev.includes(senderId)) return prev;
+          return [...prev, senderId];
+        });
+      }
     };
 
     const handleTypingStop = ({ senderId }) => {
-      setTypingUsers((prev) => prev.filter((id) => id !== senderId));
+      const message = {
+        sender: senderId,
+      };
+
+      if (isForActiveChat(message)) {
+        setTypingUsers((prev) => prev.filter((id) => id !== senderId));
+      }
+    };
+
+    // Socket listener: when a message is edited by the other user
+    const handleMessageEdited = (updatedMsg) => {
+      if (isForActiveChat(updatedMsg)) {
+        setMessages((prev) =>
+          prev?.map((msg) => (msg._id === updatedMsg._id ? updatedMsg : msg))
+        );
+      }
+
+      setConversations((prev) => prev?.map((conv) => {
+        if (
+          conv.lastMessage?._id !== updatedMsg._id ||
+          !isForConversation(conv, updatedMsg)
+        ) {
+          return conv;
+        }
+
+        return {
+          ...conv,
+          lastMessage: updatedMsg,
+        };
+      }));
+    };
+
+    // Socket listener: when a message is deleted by the other user
+    const handleMessageDeleted = ({messageId, sender, receiver, group}) => {
+      const message = {
+        sender: sender,
+        receiver: receiver,
+        group: group,
+      }
+
+      if (isForActiveChat(message)) {
+        setMessages((prev) => prev?.filter((msg) => msg._id !== messageId));
+      }
+
+
+      setConversations((prev) => prev?.map((conv) => {
+        const isMatch =
+          conv.lastMessage?._id === messageId &&
+          isForConversation(conv, message);
+
+        if (isMatch) {
+          return { ...conv, lastMessage: { ...conv.lastMessage, content: 'Message deleted' } }
+        }
+        return conv;
+      }))
+    };
+
+    // Socket listener: when a reaction is updated on a message
+    const handleMessageReaction = ({ messageId, sender, receiver, group, reactions }) => {
+      const message = {
+        sender: sender,
+        receiver: receiver,
+        group: group,
+      };
+
+      if (isForActiveChat(message)) {
+        setMessages((prev) =>
+          prev?.map((msg) =>
+            msg._id === messageId ? { ...msg, reactions } : msg
+          )
+        );
+      }
+      
+      setConversations(prev =>
+        prev.map(conv => {
+          if (
+            conv.lastMessage?._id !== messageId ||
+            !isForConversation(conv, message)
+          ) {
+            return conv;
+          }
+
+          return {
+            ...conv,
+            lastMessage: {
+              ...conv.lastMessage,
+              reactions,
+            },
+          };
+        })
+      );
     };
 
 
@@ -101,12 +204,18 @@ export function ChatProvider({ children }) {
     socket.on('message_read', handleMessageRead);
     socket.on('typing_started', handleTypingStarted);
     socket.on('typing_stop', handleTypingStop);
+    socket.on('message_edited', handleMessageEdited);
+    socket.on('message_deleted', handleMessageDeleted);
+    socket.on('message_reaction', handleMessageReaction);
 
     return () => {
       socket.off('new_message', handleNewMessage);
       socket.off('message_read', handleMessageRead);
       socket.off('typing_started', handleTypingStarted);
       socket.off('typing_stop', handleTypingStop);
+      socket.off('message_edited', handleMessageEdited);
+      socket.off('message_deleted', handleMessageDeleted);
+      socket.off('message_reaction', handleMessageReaction);
     }
 
   }, [isConnected, socket]);
@@ -224,11 +333,76 @@ export function ChatProvider({ children }) {
     clearTimeout(timeoutTimerRef.current);
 
     timeoutTimerRef.current = setTimeout(() => {
-      console.log("typing stopped");
       socketService.emit("typing_stop", { receiverId });
       isCurrentUserTypingRef.current = false;
     }, 2000);
   };
+
+  const editMessage = async (messageId, newContent) => {
+    try {
+      const response = await api.patch(`/messages/${messageId}`, { content: newContent });
+      const updatedMsg = response.data; // Backend returns the updated message object
+
+      // Update locally
+      setMessages((prev) =>
+        prev?.map((msg) => (msg._id === messageId ? updatedMsg : msg))
+      );
+
+      setConversations((prev) => prev?.map((conv) => {
+        if (conv.lastMessage._id === updatedMsg._id) {
+          return { ...conv, lastMessage: updatedMsg }
+        }
+        return conv;
+      }));
+
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+    }
+  };
+
+  const deleteMessage = async (messageId) => {
+    try {
+      await api.delete(`/messages/${messageId}`);
+
+      // Remove locally
+      setMessages((prev) => prev?.filter((msg) => msg._id !== messageId));
+
+      setConversations((prev) => prev?.map((conv) => {
+        if (conv.lastMessage._id === messageId) {
+          return { ...conv, lastMessage: { ...conv.lastMessage, content: 'Message deleted' } }
+        }
+        return conv;
+      }));
+
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+  };
+
+  const reactToMessage = async (messageId, emoji) => {
+    try {
+      const response = await api.post(`/messages/${messageId}/react`, { emoji });
+      const reactions = response.data.reactions; // Backend returns updated reactions array
+
+      // Update locally
+      setMessages((prev) =>
+        prev?.map((msg) =>
+          msg._id === messageId ? { ...msg, reactions } : msg
+        )
+      );
+
+      // setConversations((prev) => prev?.map((conv) => {
+      //   if (conv.lastMessage._id === messageId) {
+      //     return { ...conv, lastMessage: reactions }
+      //   }
+      //   return conv;
+      // }));
+
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
+    }
+  };
+
 
 
   const value = {
@@ -245,7 +419,10 @@ export function ChatProvider({ children }) {
     sendMessage,
     markAsRead,
     typingUsers,
-    handleTyping
+    handleTyping,
+    editMessage,
+    deleteMessage,
+    reactToMessage
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
